@@ -220,7 +220,6 @@ with col2:
                 c_nasc = headers[headers.index(m_nasc[0])] if m_nasc[1] >= 70 else None
 
             # --- PROCESSAMENTO ---
-            # Verificação segura se config_rh existe no session_state
             if st.session_state.config_rh is not None:
                 if st.button("🚀 Gerar Planilha Pluxee Oficial", use_container_width=True):
                     wb = openpyxl.load_workbook(template_path)
@@ -231,11 +230,21 @@ with col2:
                     config = st.session_state.config_rh
                     
                     for _, r in data_rows.iterrows():
-                        v_n, v_c = r.get(c_nome), r.get(c_cpf)
-                        if pd.isna(v_n) or str(v_n).strip() == "" or pd.isna(v_c): continue
+                        v_n = r.get(c_nome)
+                        v_c = r.get(c_cpf)
+                        
+                        # PREVENÇÃO DE ERRO: Garante que pegamos apenas um valor se a coluna estiver duplicada
+                        if isinstance(v_n, pd.Series): v_n = v_n.iloc[0]
+                        if isinstance(v_c, pd.Series): v_c = v_c.iloc[0]
+                        
+                        if pd.isna(v_n) or str(v_n).strip() == "" or pd.isna(v_c): 
+                            continue
                         
                         nf, cpfl = formatar_nome_pluxee(v_n), limpar_cpf(v_c)
-                        nasc = converter_data(r.get(c_nasc), "01/01/1980") if c_nasc else "01/01/1980"
+                        
+                        v_nasc = r.get(c_nasc) if c_nasc else None
+                        if isinstance(v_nasc, pd.Series): v_nasc = v_nasc.iloc[0]
+                        nasc = converter_data(v_nasc, "01/01/1980") if v_nasc else "01/01/1980"
 
                         for p_code in ["6001 - Carteira Refeição", "6002 - Carteira Alimentação"]:
                             ws.cell(row=r_idx, column=2, value="Ativo")
@@ -254,7 +263,7 @@ with col2:
                             ws.cell(row=r_idx, column=20, value=config.get('Complemento'))
                             ws.cell(row=r_idx, column=22, value=config.get('Bairro'))
                             ws.cell(row=r_idx, column=23, value=config.get('Cidade'))
-                            ws.cell(row=r_idx, column=24, value=config_rh.get('UF', 'SP'))
+                            ws.cell(row=r_idx, column=24, value=config.get('UF', 'SP'))
                             ws.cell(row=r_idx, column=25, value=config.get('Responsável'))
                             ws.cell(row=r_idx, column=26, value=config.get('DDD'))
                             ws.cell(row=r_idx, column=27, value=config.get('Telefone'))
@@ -266,6 +275,8 @@ with col2:
                     wb.save(buf)
                     buf.seek(0)
                     st.success("✅ Processado com sucesso!")
+                    
+                    # Usa o nome salvo no session_state para garantir que a interface não apague o dado
                     st.download_button(label="⬇️ Baixar PLANSIP3C", data=buf, 
                         file_name=f"PLANSIP3C_{re.sub(r'[^A-Za-z0-9]', '', st.session_state.razao_social)}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)

@@ -173,111 +173,73 @@ with col1:
         }
         razao_social = empresa_selecionada
     else:
-        st.info("👆 Faça o login acima com a sua conta do Lovable para puxar os clientes automaticamente.")
+        st.info("👆 Faça o login acima com a sua conta do Lovable.")
         razao_social = "Cliente_Novo"
-        
-        # Estrutura base caso não haja login (para permitir testes soltos)
         config_rh = {
-            'Local de entrega': st.text_input("Local de Entrega", "MATRIZ"),
-            'CEP': st.text_input("CEP", "00000-000"),
-            'Endereço': st.text_input("Endereço", "RUA EXEMPLO"),
-            'Número': st.text_input("Número", "100"),
-            'Complemento': st.text_input("Complemento", ""),
-            'Referência': st.text_input("Referência", ""),
-            'Bairro': st.text_input("Bairro", "CENTRO", max_chars=30),
-            'Cidade': st.text_input("Cidade", "SÃO PAULO", max_chars=30),
-            'UF': st.text_input("UF", "SP", max_chars=2),
-            'Responsável': st.text_input("Nome do Responsável", ""),
-            'DDD': st.text_input("DDD", "11", max_chars=2),
-            'Telefone': st.text_input("Telefone", "999999999"),
-            'Email': st.text_input("Email", ""),
-            'Porta_a_Porta': st.selectbox("Entrega Porta a Porta?", ["Não", "Sim"])
+            'Local de entrega': "MATRIZ", 'CEP': "00000-000", 'Endereço': "RUA EXEMPLO",
+            'Número': "100", 'Complemento': "", 'Referência': "", 'Bairro': "CENTRO",
+            'Cidade': "SÃO PAULO", 'UF': "SP", 'Responsável': "", 'DDD': "11",
+            'Telefone': "999999999", 'Email': "", 'Porta_a_Porta': "Não"
         }
 
 with col2:
     st.markdown("### 📥 Ficheiro de Funcionários")
-    arquivo_cliente = st.file_uploader("Suba a folha de cálculo, CSV ou documento Word (.docx)", type=["xlsx", "xls", "csv", "docx"])
+    arquivo_cliente = st.file_uploader("Suba a folha de cálculo (.xlsx, .xls, .csv) ou Word (.docx)", type=["xlsx", "xls", "csv", "docx"])
     
     if arquivo_cliente:
         template_path = "PLANSIP3C_NOVA.xlsx"
         if not os.path.exists(template_path):
-            st.error(f"⚠️ O ficheiro original '{template_path}' não está na mesma pasta que este programa!")
+            st.error(f"⚠️ O ficheiro original '{template_path}' não está no servidor!")
             st.stop()
 
         try:
+            # Lógica de Leitura DOCX (Word)
             if arquivo_cliente.name.endswith('.docx'):
-                if 'docx' not in globals():
-                    st.error("A biblioteca 'python-docx' não está instalada. Execute: pip3 install python-docx no terminal.")
-                    st.stop()
-                
                 doc = docx.Document(arquivo_cliente)
                 linhas_texto = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-                
                 dados_extraidos = []
                 pessoa_atual = {'nome': '', 'cpf': '', 'datas_encontradas': []}
                 
                 for linha in linhas_texto:
                     numeros = re.sub(r'\D', '', linha)
-                    
                     match_data = re.search(r'\d{2}/\d{2}/\d{2,4}', linha)
                     if match_data:
                         pessoa_atual['datas_encontradas'].append(match_data.group())
-                        
-                    elif len(numeros) >= 9 and len(numeros) <= 14:
-                        if not pessoa_atual['cpf']:
-                            pessoa_atual['cpf'] = numeros
-                        
+                    elif 9 <= len(numeros) <= 14:
+                        if not pessoa_atual['cpf']: pessoa_atual['cpf'] = numeros
                     else:
                         if pessoa_atual['nome'] and pessoa_atual['cpf']:
                             data_nascimento = ""
                             if pessoa_atual['datas_encontradas']:
-                                datas_validas = []
+                                dv = []
                                 for d in pessoa_atual['datas_encontradas']:
-                                    try:
-                                        dt_obj = parser.parse(d, dayfirst=True)
-                                        datas_validas.append((dt_obj, d))
+                                    try: dv.append((parser.parse(d, dayfirst=True), d))
                                     except: pass
-                                
-                                if datas_validas:
-                                    datas_validas.sort(key=lambda x: x[0])
-                                    data_nascimento = datas_validas[0][1] # Pega a data mais antiga
-                            
-                            dados_extraidos.append({
-                                'nome': pessoa_atual['nome'], 
-                                'cpf': pessoa_atual['cpf'], 
-                                'nascimento': data_nascimento
-                            })
-                            
+                                if dv:
+                                    dv.sort(key=lambda x: x[0])
+                                    data_nascimento = dv[0][1]
+                            dados_extraidos.append({'nome': pessoa_atual['nome'], 'cpf': pessoa_atual['cpf'], 'nascimento': data_nascimento})
                             pessoa_atual = {'nome': linha, 'cpf': '', 'datas_encontradas': []}
-                        
-                        elif not pessoa_atual['nome']:
-                            pessoa_atual['nome'] = linha
-                
+                        elif not pessoa_atual['nome']: pessoa_atual['nome'] = linha
+
                 if pessoa_atual['nome'] and pessoa_atual['cpf']:
-                    data_nascimento = ""
-                    if pessoa_atual['datas_encontradas']:
-                        datas_validas = []
-                        for d in pessoa_atual['datas_encontradas']:
-                            try:
-                                dt_obj = parser.parse(d, dayfirst=True)
-                                datas_validas.append((dt_obj, d))
-                            except: pass
-                        if datas_validas:
-                            datas_validas.sort(key=lambda x: x[0])
-                            data_nascimento = datas_validas[0][1]
-                            
-                    dados_extraidos.append({
-                        'nome': pessoa_atual['nome'], 
-                        'cpf': pessoa_atual['cpf'], 
-                        'nascimento': data_nascimento
-                    })
+                    dv = []
+                    for d in pessoa_atual['datas_encontradas']:
+                        try: dv.append((parser.parse(d, dayfirst=True), d))
+                        except: pass
+                    dn = dv[0][1] if dv else ""
+                    dados_extraidos.append({'nome': pessoa_atual['nome'], 'cpf': pessoa_atual['cpf'], 'nascimento': dn})
                 
                 data_rows = pd.DataFrame(dados_extraidos)
                 c_nome, c_cpf, c_nasc = 'nome', 'cpf', 'nascimento'
-                st.info(f"📄 Documento Word lido com sucesso! Encontrados {len(data_rows)} funcionários completos.")
-
+            
+            # Lógica de Leitura Excel/CSV
             else:
-                df_cli = pd.read_excel(arquivo_cliente, header=None) if not arquivo_cliente.name.endswith('.csv') else pd.read_csv(arquivo_cliente, header=None)
+                if arquivo_cliente.name.endswith('.csv'):
+                    df_cli = pd.read_csv(arquivo_cliente, header=None)
+                else:
+                    # Suporte a .xls (via xlrd) e .xlsx
+                    df_cli = pd.read_excel(arquivo_cliente, header=None)
                 
                 start_row = 0
                 for i, row in df_cli.head(20).iterrows():
@@ -289,75 +251,60 @@ with col2:
                 headers = [str(c).lower().strip() for c in df_cli.iloc[start_row]]
                 data_rows = df_cli.iloc[start_row+1:].reset_index(drop=True)
                 data_rows.columns = headers
-
                 c_nome = headers[headers.index(process.extractOne("nome", headers)[0])]
                 c_cpf = headers[headers.index(process.extractOne("cpf", headers)[0])]
-                
                 match_nasc = process.extractOne("nascimento", headers)
                 c_nasc = headers[headers.index(match_nasc[0])] if match_nasc[1] >= 70 else None
 
-                st.info(f"**Identificado na folha:** Nome ({c_nome}) | CPF ({c_cpf}) | Nasc ({c_nasc or 'Ausente'})")
-
-            data_credito_fixa = (datetime.now() + relativedelta(months=1)).strftime('%d/%m/%Y')
-
-            if 'Local de entrega' in config_rh and st.button("🚀 Processar e Gerar Pedido Oficial", use_container_width=True):
+            # Processamento Final
+            if st.button("🚀 Processar e Gerar Pedido Oficial", use_container_width=True):
                 wb = openpyxl.load_workbook(template_path)
                 ws = wb["Dados dos Beneficiários"]
-                
                 row_idx = 8
-                
-                with st.spinner("A processar os dados..."):
-                    for _, r in data_rows.iterrows():
-                        val_nome = r.get(c_nome)
-                        val_cpf = r.get(c_cpf)
-                        val_nasc = r.get(c_nasc) if c_nasc else ""
+                data_credito = (datetime.now() + relativedelta(months=1)).strftime('%d/%m/%Y')
 
-                        if pd.isna(val_nome) or str(val_nome).strip() == "" or pd.isna(val_cpf) or str(val_cpf).strip() == "": continue
-                        
-                        nome_formatado = formatar_nome_pluxee(val_nome)
-                        cpf_limpo = limpar_cpf(val_cpf)
-                        nascimento = converter_data(val_nasc, "01/01/1980")
+                for _, r in data_rows.iterrows():
+                    v_nome, v_cpf = r.get(c_nome), r.get(c_cpf)
+                    if pd.isna(v_nome) or str(v_nome).strip() == "" or pd.isna(v_cpf): continue
+                    
+                    nf = formatar_nome_pluxee(v_nome)
+                    cpfl = limpar_cpf(v_cpf)
+                    nasc = converter_data(r.get(c_nasc), "01/01/1980") if c_nasc else "01/01/1980"
 
-                        for p_code in ["6001 - Carteira Refeição", "6002 - Carteira Alimentação"]:
-                            ws.cell(row=row_idx, column=2, value="Ativo")
-                            ws.cell(row=row_idx, column=3, value=nome_formatado)
-                            ws.cell(row=row_idx, column=6, value=nome_formatado)
-                            ws.cell(row=row_idx, column=4, value=cpf_limpo)
-                            ws.cell(row=row_idx, column=5, value=nascimento)
-                            ws.cell(row=row_idx, column=11, value="001 - Pedido Normal")
-                            ws.cell(row=row_idx, column=12, value=p_code)
-                            ws.cell(row=row_idx, column=13, value=0)
-                            ws.cell(row=row_idx, column=14, value=data_credito_fixa)
-                            ws.cell(row=row_idx, column=15, value="")
-                            ws.cell(row=row_idx, column=16, value=config_rh['Local de entrega'])
-                            ws.cell(row=row_idx, column=17, value=config_rh['CEP'])
-                            ws.cell(row=row_idx, column=18, value=config_rh['Endereço'])
-                            ws.cell(row=row_idx, column=19, value=config_rh['Número'])
-                            ws.cell(row=row_idx, column=20, value=config_rh['Complemento'])
-                            ws.cell(row=row_idx, column=21, value=config_rh['Referência'])
-                            ws.cell(row=row_idx, column=22, value=config_rh['Bairro'])
-                            ws.cell(row=row_idx, column=23, value=config_rh['Cidade'])
-                            ws.cell(row=row_idx, column=24, value=config_rh['UF'])
-                            ws.cell(row=row_idx, column=25, value=config_rh['Responsável'])
-                            ws.cell(row=row_idx, column=26, value=config_rh['DDD'])
-                            ws.cell(row=row_idx, column=27, value=config_rh['Telefone'])
-                            ws.cell(row=row_idx, column=28, value=config_rh['Email'])
-                            ws.cell(row=row_idx, column=29, value=config_rh['Porta_a_Porta'])
-                            row_idx += 1
+                    for p_code in ["6001 - Carteira Refeição", "6002 - Carteira Alimentação"]:
+                        ws.cell(row=row_idx, column=2, value="Ativo")
+                        ws.cell(row=row_idx, column=3, value=nf)
+                        ws.cell(row=row_idx, column=6, value=nf)
+                        ws.cell(row=row_idx, column=4, value=cpfl)
+                        ws.cell(row=row_idx, column=5, value=nasc)
+                        ws.cell(row=row_idx, column=11, value="001 - Pedido Normal")
+                        ws.cell(row=row_idx, column=12, value=p_code)
+                        ws.cell(row=row_idx, column=13, value=0)
+                        ws.cell(row=row_idx, column=14, value=data_credito)
+                        ws.cell(row=row_idx, column=16, value=config_rh['Local de entrega'])
+                        ws.cell(row=row_idx, column=17, value=config_rh['CEP'])
+                        ws.cell(row=row_idx, column=18, value=config_rh['Endereço'])
+                        ws.cell(row=row_idx, column=19, value=config_rh['Número'])
+                        ws.cell(row=row_idx, column=22, value=config_rh['Bairro'])
+                        ws.cell(row=row_idx, column=23, value=config_rh['Cidade'])
+                        ws.cell(row=row_idx, column=24, value=config_rh['UF'])
+                        ws.cell(row=row_idx, column=25, value=config_rh['Responsável'])
+                        ws.cell(row=row_idx, column=28, value=config_rh['Email'])
+                        ws.cell(row=row_idx, column=29, value=config_rh['Porta_a_Porta'])
+                        row_idx += 1
 
                 buf = io.BytesIO()
                 wb.save(buf)
+                buf.seek(0)
                 
-                st.success(f"✅ Pedido finalizado com sucesso! Ficheiro gerado de forma blindada.")
-                
-                nome_arquivo_seguro = re.sub(r'[^A-Za-z0-9]', '', razao_social)
+                st.success(f"✅ Pedido finalizado!")
                 st.download_button(
-                    label="⬇️ Download do Ficheiro PLANSIP3C Pronto",
-                    data=buf.getvalue(),
-                    file_name=f"PLANSIP3C_{nome_arquivo_seguro}.xlsx",
+                    label="⬇️ Download da Planilha PLANSIP3C",
+                    data=buf,
+                    file_name=f"PLANSIP3C_{re.sub(r'[^A-Za-z0-9]', '', razao_social)}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
 
         except Exception as e:
-            st.error(f"Erro durante o processamento: {e}")
+            st.error(f"Erro: {e}")

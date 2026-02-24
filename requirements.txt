@@ -1,0 +1,8 @@
+streamlit
+pandas
+openpyxl
+python-dateutil
+thefuzz
+unidecode
+requests
+python-docx

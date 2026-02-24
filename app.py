@@ -11,6 +11,7 @@ from thefuzz import process
 import openpyxl
 import requests
 
+# Tenta importar o módulo para leitura de ficheiros Word
 try:
     import docx
 except ImportError:
@@ -21,6 +22,7 @@ except ImportError:
 # ==========================================
 
 def formatar_nome_pluxee(nome_bruto, limite=40):
+    """Abrevia nomes do meio, mantendo Primeiro e Último intactos."""
     nome = unidecode(str(nome_bruto)).upper().strip()
     if len(nome) <= limite:
         return nome
@@ -31,7 +33,7 @@ def formatar_nome_pluxee(nome_bruto, limite=40):
     ultimo = partes[-1]
     meio = partes[1:-1]
     for i in range(len(meio)):
-        if len(meio[i]) > 2:
+        if len(meio[i]) > 2: 
             meio[i] = meio[i][0] + "."
         tentativa = " ".join([primeiro] + meio + [ultimo])
         if len(tentativa) <= limite:
@@ -40,6 +42,7 @@ def formatar_nome_pluxee(nome_bruto, limite=40):
     return extremo[:limite]
 
 def formatar_local(texto_bruto, limite=30):
+    """Abrevia bairros e cidades para caber no limite da Pluxee."""
     if pd.isna(texto_bruto): return ""
     texto = unidecode(str(texto_bruto)).upper().strip()
     if len(texto) <= limite:
@@ -56,15 +59,16 @@ def formatar_local(texto_bruto, limite=30):
         tentativa = " ".join([primeiro] + meio + [ultimo])
         if len(tentativa) <= limite:
             return tentativa
-    extremo = f"{primeiro} {ultimo}"
-    return extremo[:limite]
+    return texto[:limite]
 
 def limpar_cpf(cpf_bruto):
+    """Garante CPF com 11 dígitos numéricos."""
     if pd.isna(cpf_bruto): return ""
     cpf_limpo = re.sub(r'\D', '', str(cpf_bruto))
     return cpf_limpo.zfill(11)
 
 def converter_data(data_bruta, data_padrao):
+    """Converte qualquer formato de data para DD/MM/AAAA."""
     if pd.isna(data_bruta) or str(data_bruta).strip() == "":
         return data_padrao
     try:
@@ -74,7 +78,7 @@ def converter_data(data_bruta, data_padrao):
         return data_padrao
 
 # ==========================================
-# INTERFACE E PROCESSAMENTO
+# INTERFACE E LIGAÇÃO API
 # ==========================================
 st.set_page_config(page_title="Gerador Pluxee Oficial", page_icon="💳", layout="wide")
 st.title("💳 Máquina de Geração - Pluxee PLANSIP3C")
@@ -83,7 +87,6 @@ col1, col2 = st.columns([1, 2])
 
 with col1:
     st.markdown("### ⚙️ Dados Fixos do Pedido")
-    
     st.markdown("**🔐 Ligação ao Lovable**")
     email_lovable = st.text_input("E-mail Lovable", "seu@email.com")
     senha_lovable = st.text_input("Password Lovable", type="password")
@@ -92,219 +95,179 @@ with col1:
     def carregar_clientes_lovable(email, senha):
         if email == "seu@email.com" or senha == "":
             return pd.DataFrame()
-            
         url_base = "https://rlbcxlgqfvcloieywfiq.supabase.co"
         anon_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJsYmN4bGdxZnZjbG9pZXl3ZmlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1MzA3NDIsImV4cCI6MjA4NTEwNjc0Mn0.Rj6JhvcGscQ6quQ9K6QwDdiHjbh2pHOZVS7gwDQHDV0"
-        
         try:
-            auth = requests.post(
-                f"{url_base}/auth/v1/token?grant_type=password",
+            auth = requests.post(f"{url_base}/auth/v1/token?grant_type=password",
                 json={"email": email, "password": senha},
-                headers={"apikey": anon_key, "Content-Type": "application/json"}
-            )
-            
+                headers={"apikey": anon_key, "Content-Type": "application/json"})
             if auth.status_code != 200:
-                st.error("❌ E-mail ou password do Lovable incorretos.")
+                st.error("❌ Credenciais Lovable incorretas.")
                 return pd.DataFrame()
-                
             token = auth.json()["access_token"]
-            
-            resp = requests.get(
-                f"{url_base}/functions/v1/api-vendas",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "apikey": anon_key
-                }
-            )
-            
+            resp = requests.get(f"{url_base}/functions/v1/api-vendas",
+                headers={"Authorization": f"Bearer {token}", "apikey": anon_key})
             if resp.status_code == 200:
-                vendas_json = resp.json()
-                lista_vendas = vendas_json.get("vendas", [])
-                
-                if len(lista_vendas) > 0:
-                    df = pd.DataFrame(lista_vendas)
-                    df = df.rename(columns={
-                        "cliente_nome": "razao_social",
-                        "responsavel_pedido": "responsavel",
-                        "estado": "uf"
-                    })
-                    return df
-                else:
-                    st.warning("Nenhuma venda encontrada na API.")
-            else:
-                st.error(f"Erro ao procurar vendas na API: {resp.status_code}")
-                
+                lista = resp.json().get("vendas", [])
+                if lista:
+                    df = pd.DataFrame(lista)
+                    return df.rename(columns={"cliente_nome": "razao_social", "responsavel_pedido": "responsavel", "estado": "uf"})
         except Exception as e:
-            st.error(f"Falha na ligação: {e}")
-            
+            st.error(f"Erro de ligação: {e}")
         return pd.DataFrame()
 
     df_clientes = carregar_clientes_lovable(email_lovable, senha_lovable)
-
     st.markdown("---")
 
-    if not df_clientes.empty and 'razao_social' in df_clientes.columns:
-        st.success(f"✅ Ligado! {len(df_clientes)} vendas encontradas.")
-        lista_empresas = df_clientes['razao_social'].tolist()
-        empresa_selecionada = st.selectbox("🔍 Selecione o Cliente (Venda Lovable)", lista_empresas)
+    config_rh = {}
+    razao_social = "Cliente_Novo"
 
-        dados_empresa = df_clientes[df_clientes['razao_social'] == empresa_selecionada].iloc[0]
-
-        st.markdown("**Endereço e Contato (RH) - Preenchimento Automático**")
+    if not df_clientes.empty:
+        st.success(f"✅ {len(df_clientes)} vendas encontradas.")
+        empresa_sel = st.selectbox("🔍 Selecione o Cliente", df_clientes['razao_social'].tolist())
+        dados_e = df_clientes[df_clientes['razao_social'] == empresa_sel].iloc[0]
         
-        bairro_formatado = formatar_local(dados_empresa.get('endereco_bairro', 'CENTRO'), 30)
-        cidade_formatada = formatar_local(dados_empresa.get('cidade', 'SÃO PAULO'), 30)
-        
+        # Preenchimento automático com limites de 30 caracteres
         config_rh = {
             'Local de entrega': st.text_input("Local de Entrega", "MATRIZ"),
-            'CEP': st.text_input("CEP", str(dados_empresa.get('endereco_cep', '00000-000'))),
-            'Endereço': st.text_input("Endereço", str(dados_empresa.get('endereco', 'RUA EXEMPLO'))),
-            'Número': st.text_input("Número", str(dados_empresa.get('numero', '100'))),
-            'Complemento': st.text_input("Complemento", str(dados_empresa.get('endereco_complemento', ''))),
+            'CEP': st.text_input("CEP", str(dados_e.get('endereco_cep', '00000-000'))),
+            'Endereço': st.text_input("Endereço", str(dados_e.get('endereco', 'RUA EXEMPLO'))),
+            'Número': st.text_input("Número", str(dados_e.get('numero', '100'))),
+            'Complemento': st.text_input("Complemento", str(dados_e.get('endereco_complemento', ''))),
             'Referência': st.text_input("Referência", ""),
-            'Bairro': st.text_input("Bairro", bairro_formatado, max_chars=30),
-            'Cidade': st.text_input("Cidade", cidade_formatada, max_chars=30),
-            'UF': st.text_input("UF", str(dados_empresa.get('uf', 'SP')).upper(), max_chars=2),
-            'Responsável': st.text_input("Nome do Responsável", str(dados_empresa.get('responsavel', ''))),
+            'Bairro': st.text_input("Bairro", formatar_local(dados_e.get('endereco_bairro', 'CENTRO')), max_chars=30),
+            'Cidade': st.text_input("Cidade", formatar_local(dados_e.get('cidade', 'SÃO PAULO')), max_chars=30),
+            'UF': st.text_input("UF", str(dados_e.get('uf', 'SP')).upper(), max_chars=2),
+            'Responsável': st.text_input("Responsável", str(dados_e.get('responsavel', ''))),
             'DDD': st.text_input("DDD", "11", max_chars=2),
             'Telefone': st.text_input("Telefone", "999999999"),
             'Email': st.text_input("Email", ""),
-            'Porta_a_Porta': st.selectbox("Entrega Porta a Porta?", ["Não", "Sim"])
+            'Porta_a_Porta': st.selectbox("Porta a Porta?", ["Não", "Sim"])
         }
-        razao_social = empresa_selecionada
+        razao_social = empresa_sel
     else:
-        st.info("👆 Faça o login acima com a sua conta do Lovable.")
-        razao_social = "Cliente_Novo"
-        config_rh = {
-            'Local de entrega': "MATRIZ", 'CEP': "00000-000", 'Endereço': "RUA EXEMPLO",
-            'Número': "100", 'Complemento': "", 'Referência': "", 'Bairro': "CENTRO",
-            'Cidade': "SÃO PAULO", 'UF': "SP", 'Responsável': "", 'DDD': "11",
-            'Telefone': "999999999", 'Email': "", 'Porta_a_Porta': "Não"
-        }
+        st.info("Faça login para carregar dados do Lovable.")
 
 with col2:
     st.markdown("### 📥 Ficheiro de Funcionários")
-    arquivo_cliente = st.file_uploader("Suba a folha de cálculo (.xlsx, .xls, .csv) ou Word (.docx)", type=["xlsx", "xls", "csv", "docx"])
+    arq = st.file_uploader("Suba Excel (.xlsx, .xls), CSV ou Word (.docx)", type=["xlsx", "xls", "csv", "docx"])
     
-    if arquivo_cliente:
+    if arq:
         template_path = "PLANSIP3C_NOVA.xlsx"
         if not os.path.exists(template_path):
-            st.error(f"⚠️ O ficheiro original '{template_path}' não está no servidor!")
+            st.error("Arquivo PLANSIP3C_NOVA.xlsx não encontrado no GitHub.")
             st.stop()
 
         try:
-            # Lógica de Leitura DOCX (Word)
-            if arquivo_cliente.name.endswith('.docx'):
-                doc = docx.Document(arquivo_cliente)
-                linhas_texto = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-                dados_extraidos = []
-                pessoa_atual = {'nome': '', 'cpf': '', 'datas_encontradas': []}
-                
-                for linha in linhas_texto:
-                    numeros = re.sub(r'\D', '', linha)
-                    match_data = re.search(r'\d{2}/\d{2}/\d{2,4}', linha)
-                    if match_data:
-                        pessoa_atual['datas_encontradas'].append(match_data.group())
-                    elif 9 <= len(numeros) <= 14:
-                        if not pessoa_atual['cpf']: pessoa_atual['cpf'] = numeros
+            # --- LEITOR WORD ---
+            if arq.name.endswith('.docx'):
+                doc = docx.Document(arq)
+                linhas = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+                dados_ex = []
+                p_atual = {'nome': '', 'cpf': '', 'datas': []}
+                for l in linhas:
+                    nums = re.sub(r'\D', '', l)
+                    m_data = re.search(r'\d{2}/\d{2}/\d{2,4}', l)
+                    if m_data: p_atual['datas'].append(m_data.group())
+                    elif 9 <= len(nums) <= 14:
+                        if not p_atual['cpf']: p_atual['cpf'] = nums
                     else:
-                        if pessoa_atual['nome'] and pessoa_atual['cpf']:
-                            data_nascimento = ""
-                            if pessoa_atual['datas_encontradas']:
-                                dv = []
-                                for d in pessoa_atual['datas_encontradas']:
-                                    try: dv.append((parser.parse(d, dayfirst=True), d))
+                        if p_atual['nome'] and p_atual['cpf']:
+                            d_nasc = ""
+                            if p_atual['datas']:
+                                validas = []
+                                for d in p_atual['datas']:
+                                    try: validas.append((parser.parse(d, dayfirst=True), d))
                                     except: pass
-                                if dv:
-                                    dv.sort(key=lambda x: x[0])
-                                    data_nascimento = dv[0][1]
-                            dados_extraidos.append({'nome': pessoa_atual['nome'], 'cpf': pessoa_atual['cpf'], 'nascimento': data_nascimento})
-                            pessoa_atual = {'nome': linha, 'cpf': '', 'datas_encontradas': []}
-                        elif not pessoa_atual['nome']: pessoa_atual['nome'] = linha
-
-                if pessoa_atual['nome'] and pessoa_atual['cpf']:
-                    dv = []
-                    for d in pessoa_atual['datas_encontradas']:
-                        try: dv.append((parser.parse(d, dayfirst=True), d))
-                        except: pass
-                    dn = dv[0][1] if dv else ""
-                    dados_extraidos.append({'nome': pessoa_atual['nome'], 'cpf': pessoa_atual['cpf'], 'nascimento': dn})
+                                if validas:
+                                    validas.sort(key=lambda x: x[0])
+                                    d_nasc = validas[0][1] # Mais antiga
+                            dados_ex.append({'nome': p_atual['nome'], 'cpf': p_atual['cpf'], 'nascimento': d_nasc})
+                            p_atual = {'nome': l, 'cpf': '', 'datas': []}
+                        elif not p_atual['nome']: p_atual['nome'] = l
                 
-                data_rows = pd.DataFrame(dados_extraidos)
+                # Última pessoa
+                if p_atual['nome'] and p_atual['cpf']:
+                    d_nasc = ""
+                    if p_atual['datas']:
+                        validas = []
+                        for d in p_atual['datas']:
+                            try: validas.append((parser.parse(d, dayfirst=True), d))
+                            except: pass
+                        if validas:
+                            validas.sort(key=lambda x: x[0])
+                            d_nasc = validas[0][1]
+                    dados_ex.append({'nome': p_atual['nome'], 'cpf': p_atual['cpf'], 'nascimento': d_nasc})
+                data_rows = pd.DataFrame(dados_ex)
                 c_nome, c_cpf, c_nasc = 'nome', 'cpf', 'nascimento'
-            
-            # Lógica de Leitura Excel/CSV
+
+            # --- LEITOR EXCEL/CSV ---
             else:
-                if arquivo_cliente.name.endswith('.csv'):
-                    df_cli = pd.read_csv(arquivo_cliente, header=None)
-                else:
-                    # Suporte a .xls (via xlrd) e .xlsx
-                    df_cli = pd.read_excel(arquivo_cliente, header=None)
+                if arq.name.endswith('.csv'): df_cli = pd.read_csv(arq, header=None)
+                else: df_cli = pd.read_excel(arq, header=None) # Suporta xls e xlsx
                 
                 start_row = 0
                 for i, row in df_cli.head(20).iterrows():
-                    linha_txt = str(row.values).lower()
-                    if 'nome' in linha_txt and 'cpf' in linha_txt:
+                    l_txt = str(row.values).lower()
+                    if 'nome' in l_txt and 'cpf' in l_txt:
                         start_row = i
                         break
-                
                 headers = [str(c).lower().strip() for c in df_cli.iloc[start_row]]
                 data_rows = df_cli.iloc[start_row+1:].reset_index(drop=True)
                 data_rows.columns = headers
                 c_nome = headers[headers.index(process.extractOne("nome", headers)[0])]
                 c_cpf = headers[headers.index(process.extractOne("cpf", headers)[0])]
-                match_nasc = process.extractOne("nascimento", headers)
-                c_nasc = headers[headers.index(match_nasc[0])] if match_nasc[1] >= 70 else None
+                m_nasc = process.extractOne("nascimento", headers)
+                c_nasc = headers[headers.index(m_nasc[0])] if m_nasc[1] >= 70 else None
 
-            # Processamento Final
-            if st.button("🚀 Processar e Gerar Pedido Oficial", use_container_width=True):
-                wb = openpyxl.load_workbook(template_path)
-                ws = wb["Dados dos Beneficiários"]
-                row_idx = 8
-                data_credito = (datetime.now() + relativedelta(months=1)).strftime('%d/%m/%Y')
-
-                for _, r in data_rows.iterrows():
-                    v_nome, v_cpf = r.get(c_nome), r.get(c_cpf)
-                    if pd.isna(v_nome) or str(v_nome).strip() == "" or pd.isna(v_cpf): continue
+            # --- PROCESSAMENTO ---
+            if isinstance(config_rh, dict) and len(config_rh) > 0:
+                if st.button("🚀 Gerar Planilha Pluxee Oficial", use_container_width=True):
+                    wb = openpyxl.load_workbook(template_path)
+                    ws = wb["Dados dos Beneficiários"]
+                    r_idx = 8
+                    dt_cred = (datetime.now() + relativedelta(months=1)).strftime('%d/%m/%Y')
                     
-                    nf = formatar_nome_pluxee(v_nome)
-                    cpfl = limpar_cpf(v_cpf)
-                    nasc = converter_data(r.get(c_nasc), "01/01/1980") if c_nasc else "01/01/1980"
+                    for _, r in data_rows.iterrows():
+                        v_n, v_c = r.get(c_nome), r.get(c_cpf)
+                        if pd.isna(v_n) or str(v_n).strip() == "" or pd.isna(v_c): continue
+                        
+                        nf, cpfl = formatar_nome_pluxee(v_n), limpar_cpf(v_c)
+                        nasc = converter_data(r.get(c_nasc), "01/01/1980") if c_nasc else "01/01/1980"
 
-                    for p_code in ["6001 - Carteira Refeição", "6002 - Carteira Alimentação"]:
-                        ws.cell(row=row_idx, column=2, value="Ativo")
-                        ws.cell(row=row_idx, column=3, value=nf)
-                        ws.cell(row=row_idx, column=6, value=nf)
-                        ws.cell(row=row_idx, column=4, value=cpfl)
-                        ws.cell(row=row_idx, column=5, value=nasc)
-                        ws.cell(row=row_idx, column=11, value="001 - Pedido Normal")
-                        ws.cell(row=row_idx, column=12, value=p_code)
-                        ws.cell(row=row_idx, column=13, value=0)
-                        ws.cell(row=row_idx, column=14, value=data_credito)
-                        ws.cell(row=row_idx, column=16, value=config_rh['Local de entrega'])
-                        ws.cell(row=row_idx, column=17, value=config_rh['CEP'])
-                        ws.cell(row=row_idx, column=18, value=config_rh['Endereço'])
-                        ws.cell(row=row_idx, column=19, value=config_rh['Número'])
-                        ws.cell(row=row_idx, column=22, value=config_rh['Bairro'])
-                        ws.cell(row=row_idx, column=23, value=config_rh['Cidade'])
-                        ws.cell(row=row_idx, column=24, value=config_rh['UF'])
-                        ws.cell(row=row_idx, column=25, value=config_rh['Responsável'])
-                        ws.cell(row=row_idx, column=28, value=config_rh['Email'])
-                        ws.cell(row=row_idx, column=29, value=config_rh['Porta_a_Porta'])
-                        row_idx += 1
-
-                buf = io.BytesIO()
-                wb.save(buf)
-                buf.seek(0)
-                
-                st.success(f"✅ Pedido finalizado!")
-                st.download_button(
-                    label="⬇️ Download da Planilha PLANSIP3C",
-                    data=buf,
-                    file_name=f"PLANSIP3C_{re.sub(r'[^A-Za-z0-9]', '', razao_social)}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-
+                        for p_code in ["6001 - Carteira Refeição", "6002 - Carteira Alimentação"]:
+                            ws.cell(row=r_idx, column=2, value="Ativo")
+                            ws.cell(row=r_idx, column=3, value=nf)
+                            ws.cell(row=r_idx, column=6, value=nf)
+                            ws.cell(row=r_idx, column=4, value=cpfl)
+                            ws.cell(row=r_idx, column=5, value=nasc)
+                            ws.cell(row=r_idx, column=11, value="001 - Pedido Normal")
+                            ws.cell(row=r_idx, column=12, value=p_code)
+                            ws.cell(row=r_idx, column=13, value=0)
+                            ws.cell(row=r_idx, column=14, value=dt_cred)
+                            ws.cell(row=r_idx, column=16, value=config_rh.get('Local de entrega'))
+                            ws.cell(row=r_idx, column=17, value=config_rh.get('CEP'))
+                            ws.cell(row=r_idx, column=18, value=config_rh.get('Endereço'))
+                            ws.cell(row=r_idx, column=19, value=config_rh.get('Número'))
+                            ws.cell(row=r_idx, column=20, value=config_rh.get('Complemento'))
+                            ws.cell(row=r_idx, column=22, value=config_rh.get('Bairro'))
+                            ws.cell(row=r_idx, column=23, value=config_rh.get('Cidade'))
+                            ws.cell(row=r_idx, column=24, value=config_rh.get('UF'))
+                            ws.cell(row=r_idx, column=25, value=config_rh.get('Responsável'))
+                            ws.cell(row=r_idx, column=26, value=config_rh.get('DDD'))
+                            ws.cell(row=r_idx, column=27, value=config_rh.get('Telefone'))
+                            ws.cell(row=r_idx, column=28, value=config_rh.get('Email'))
+                            ws.cell(row=r_idx, column=29, value=config_rh.get('Porta_a_Porta'))
+                            r_idx += 1
+                    
+                    buf = io.BytesIO()
+                    wb.save(buf)
+                    buf.seek(0)
+                    st.success("✅ Processado!")
+                    st.download_button(label="⬇️ Baixar PLANSIP3C", data=buf, 
+                        file_name=f"PLANSIP3C_{re.sub(r'[^A-Za-z0-9]', '', razao_social)}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            else:
+                st.warning("⚠️ Selecione um cliente no menu à esquerda primeiro.")
         except Exception as e:
-            st.error(f"Erro: {e}")
+            st.error(f"Erro no processamento: {e}")

@@ -6,3 +6,4 @@ thefuzz
 unidecode
 requests
 python-docx
+xlrd

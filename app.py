@@ -85,6 +85,12 @@ st.title("💳 Máquina de Geração - Pluxee PLANSIP3C")
 
 col1, col2 = st.columns([1, 2])
 
+# Inicializa o estado para evitar o erro de Series ambígua
+if "config_rh" not in st.session_state:
+    st.session_state.config_rh = None
+if "razao_social" not in st.session_state:
+    st.session_state.razao_social = "Cliente_Novo"
+
 with col1:
     st.markdown("### ⚙️ Dados Fixos do Pedido")
     st.markdown("**🔐 Ligação ao Lovable**")
@@ -102,7 +108,6 @@ with col1:
                 json={"email": email, "password": senha},
                 headers={"apikey": anon_key, "Content-Type": "application/json"})
             if auth.status_code != 200:
-                st.error("❌ Credenciais Lovable incorretas.")
                 return pd.DataFrame()
             token = auth.json()["access_token"]
             resp = requests.get(f"{url_base}/functions/v1/api-vendas",
@@ -119,16 +124,15 @@ with col1:
     df_clientes = carregar_clientes_lovable(email_lovable, senha_lovable)
     st.markdown("---")
 
-    config_rh = {}
-    razao_social = "Cliente_Novo"
-
     if not df_clientes.empty:
         st.success(f"✅ {len(df_clientes)} vendas encontradas.")
         empresa_sel = st.selectbox("🔍 Selecione o Cliente", df_clientes['razao_social'].tolist())
-        dados_e = df_clientes[df_clientes['razao_social'] == empresa_sel].iloc[0]
         
-        # Preenchimento automático com limites de 30 caracteres
-        config_rh = {
+        # Converte a Series para um dicionário Python comum para evitar erro de ambiguidade
+        dados_e = df_clientes[df_clientes['razao_social'] == empresa_sel].iloc[0].to_dict()
+        st.session_state.razao_social = empresa_sel
+        
+        st.session_state.config_rh = {
             'Local de entrega': st.text_input("Local de Entrega", "MATRIZ"),
             'CEP': st.text_input("CEP", str(dados_e.get('endereco_cep', '00000-000'))),
             'Endereço': st.text_input("Endereço", str(dados_e.get('endereco', 'RUA EXEMPLO'))),
@@ -144,7 +148,6 @@ with col1:
             'Email': st.text_input("Email", ""),
             'Porta_a_Porta': st.selectbox("Porta a Porta?", ["Não", "Sim"])
         }
-        razao_social = empresa_sel
     else:
         st.info("Faça login para carregar dados do Lovable.")
 
@@ -181,30 +184,26 @@ with col2:
                                     except: pass
                                 if validas:
                                     validas.sort(key=lambda x: x[0])
-                                    d_nasc = validas[0][1] # Mais antiga
+                                    d_nasc = validas[0][1]
                             dados_ex.append({'nome': p_atual['nome'], 'cpf': p_atual['cpf'], 'nascimento': d_nasc})
                             p_atual = {'nome': l, 'cpf': '', 'datas': []}
                         elif not p_atual['nome']: p_atual['nome'] = l
                 
-                # Última pessoa
                 if p_atual['nome'] and p_atual['cpf']:
-                    d_nasc = ""
-                    if p_atual['datas']:
-                        validas = []
-                        for d in p_atual['datas']:
-                            try: validas.append((parser.parse(d, dayfirst=True), d))
-                            except: pass
-                        if validas:
-                            validas.sort(key=lambda x: x[0])
-                            d_nasc = validas[0][1]
-                    dados_ex.append({'nome': p_atual['nome'], 'cpf': p_atual['cpf'], 'nascimento': d_nasc})
+                    dv = []
+                    for d in p_atual['datas']:
+                        try: dv.append((parser.parse(d, dayfirst=True), d))
+                        except: pass
+                    dn = dv[0][1] if dv else ""
+                    dados_ex.append({'nome': p_atual['nome'], 'cpf': p_atual['cpf'], 'nascimento': dn})
+                
                 data_rows = pd.DataFrame(dados_ex)
                 c_nome, c_cpf, c_nasc = 'nome', 'cpf', 'nascimento'
 
             # --- LEITOR EXCEL/CSV ---
             else:
                 if arq.name.endswith('.csv'): df_cli = pd.read_csv(arq, header=None)
-                else: df_cli = pd.read_excel(arq, header=None) # Suporta xls e xlsx
+                else: df_cli = pd.read_excel(arq, header=None)
                 
                 start_row = 0
                 for i, row in df_cli.head(20).iterrows():
@@ -221,12 +220,15 @@ with col2:
                 c_nasc = headers[headers.index(m_nasc[0])] if m_nasc[1] >= 70 else None
 
             # --- PROCESSAMENTO ---
-            if isinstance(config_rh, dict) and len(config_rh) > 0:
+            # Verificação segura se config_rh existe no session_state
+            if st.session_state.config_rh is not None:
                 if st.button("🚀 Gerar Planilha Pluxee Oficial", use_container_width=True):
                     wb = openpyxl.load_workbook(template_path)
                     ws = wb["Dados dos Beneficiários"]
                     r_idx = 8
                     dt_cred = (datetime.now() + relativedelta(months=1)).strftime('%d/%m/%Y')
+                    
+                    config = st.session_state.config_rh
                     
                     for _, r in data_rows.iterrows():
                         v_n, v_c = r.get(c_nome), r.get(c_cpf)
@@ -245,27 +247,27 @@ with col2:
                             ws.cell(row=r_idx, column=12, value=p_code)
                             ws.cell(row=r_idx, column=13, value=0)
                             ws.cell(row=r_idx, column=14, value=dt_cred)
-                            ws.cell(row=r_idx, column=16, value=config_rh.get('Local de entrega'))
-                            ws.cell(row=r_idx, column=17, value=config_rh.get('CEP'))
-                            ws.cell(row=r_idx, column=18, value=config_rh.get('Endereço'))
-                            ws.cell(row=r_idx, column=19, value=config_rh.get('Número'))
-                            ws.cell(row=r_idx, column=20, value=config_rh.get('Complemento'))
-                            ws.cell(row=r_idx, column=22, value=config_rh.get('Bairro'))
-                            ws.cell(row=r_idx, column=23, value=config_rh.get('Cidade'))
-                            ws.cell(row=r_idx, column=24, value=config_rh.get('UF'))
-                            ws.cell(row=r_idx, column=25, value=config_rh.get('Responsável'))
-                            ws.cell(row=r_idx, column=26, value=config_rh.get('DDD'))
-                            ws.cell(row=r_idx, column=27, value=config_rh.get('Telefone'))
-                            ws.cell(row=r_idx, column=28, value=config_rh.get('Email'))
-                            ws.cell(row=r_idx, column=29, value=config_rh.get('Porta_a_Porta'))
+                            ws.cell(row=r_idx, column=16, value=config.get('Local de entrega'))
+                            ws.cell(row=r_idx, column=17, value=config.get('CEP'))
+                            ws.cell(row=r_idx, column=18, value=config.get('Endereço'))
+                            ws.cell(row=r_idx, column=19, value=config.get('Número'))
+                            ws.cell(row=r_idx, column=20, value=config.get('Complemento'))
+                            ws.cell(row=r_idx, column=22, value=config.get('Bairro'))
+                            ws.cell(row=r_idx, column=23, value=config.get('Cidade'))
+                            ws.cell(row=r_idx, column=24, value=config_rh.get('UF', 'SP'))
+                            ws.cell(row=r_idx, column=25, value=config.get('Responsável'))
+                            ws.cell(row=r_idx, column=26, value=config.get('DDD'))
+                            ws.cell(row=r_idx, column=27, value=config.get('Telefone'))
+                            ws.cell(row=r_idx, column=28, value=config.get('Email'))
+                            ws.cell(row=r_idx, column=29, value=config.get('Porta_a_Porta'))
                             r_idx += 1
                     
                     buf = io.BytesIO()
                     wb.save(buf)
                     buf.seek(0)
-                    st.success("✅ Processado!")
+                    st.success("✅ Processado com sucesso!")
                     st.download_button(label="⬇️ Baixar PLANSIP3C", data=buf, 
-                        file_name=f"PLANSIP3C_{re.sub(r'[^A-Za-z0-9]', '', razao_social)}.xlsx",
+                        file_name=f"PLANSIP3C_{re.sub(r'[^A-Za-z0-9]', '', st.session_state.razao_social)}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             else:
                 st.warning("⚠️ Selecione um cliente no menu à esquerda primeiro.")

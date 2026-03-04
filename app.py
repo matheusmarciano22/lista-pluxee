@@ -132,7 +132,6 @@ with col1:
         st.success(f"✅ {len(df_clientes)} vendas encontradas.")
         empresa_sel = st.selectbox("🔍 Selecione o Cliente", df_clientes['razao_social'].tolist())
         
-        # Converte a Series para um dicionário para evitar erro de ambiguidade
         dados_e = df_clientes[df_clientes['razao_social'] == empresa_sel].iloc[0].to_dict()
         st.session_state.razao_social = empresa_sel
         
@@ -166,7 +165,7 @@ with col2:
             st.stop()
 
         try:
-            # --- LEITOR WORD ---
+            # --- LEITOR WORD BLINDADO ---
             if arq.name.endswith('.docx'):
                 doc = docx.Document(arq)
                 linhas = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
@@ -174,30 +173,37 @@ with col2:
                 p_atual = {'nome': '', 'cpf': '', 'datas': []}
                 for l in linhas:
                     nums = re.sub(r'\D', '', l)
-                    # Regex ajustada para aceitar barra / ou traço -
+                    
+                    # 1. VALIDAÇÃO DE DATA: Exige o padrão 6 ou 8 dígitos estruturados (XX/XX/XX ou XX-XX-XXXX)
                     m_data = re.search(r'\d{2}[/-]\d{2}[/-]\d{2,4}', l)
                     
                     if m_data: 
                         p_atual['datas'].append(m_data.group())
-                    elif 9 <= len(nums) <= 14:
+                        
+                    # 2. VALIDAÇÃO DE CPF: Deve ter EXATAMENTE 11 dígitos numéricos
+                    elif len(nums) == 11:
                         if not p_atual['cpf']: p_atual['cpf'] = nums
+                        
+                    # 3. VALIDAÇÃO DE NOME: Deve conter letras (Evita que RGs de 9 números caiam como nome)
                     else:
-                        if p_atual['nome'] and p_atual['cpf']:
-                            d_nasc = ""
-                            if p_atual['datas']:
-                                validas = []
-                                for d in p_atual['datas']:
-                                    try: 
-                                        # Limpa traços antes do parser
-                                        validas.append((parser.parse(d.replace('-', '/'), dayfirst=True), d))
-                                    except: pass
-                                if validas:
-                                    validas.sort(key=lambda x: x[0])
-                                    d_nasc = validas[0][1]
-                            dados_ex.append({'nome': p_atual['nome'], 'cpf': p_atual['cpf'], 'nascimento': d_nasc})
-                            p_atual = {'nome': l, 'cpf': '', 'datas': []}
-                        elif not p_atual['nome']: p_atual['nome'] = l
+                        if re.search(r'[a-zA-Z]', l):
+                            if p_atual['nome'] and p_atual['cpf']:
+                                d_nasc = ""
+                                if p_atual['datas']:
+                                    validas = []
+                                    for d in p_atual['datas']:
+                                        try: 
+                                            validas.append((parser.parse(d.replace('-', '/'), dayfirst=True), d))
+                                        except: pass
+                                    if validas:
+                                        validas.sort(key=lambda x: x[0])
+                                        d_nasc = validas[0][1]
+                                dados_ex.append({'nome': p_atual['nome'], 'cpf': p_atual['cpf'], 'nascimento': d_nasc})
+                                p_atual = {'nome': l, 'cpf': '', 'datas': []}
+                            elif not p_atual['nome']: 
+                                p_atual['nome'] = l
                 
+                # Guarda a última pessoa do documento
                 if p_atual['nome'] and p_atual['cpf']:
                     dv = []
                     for d in p_atual['datas']:

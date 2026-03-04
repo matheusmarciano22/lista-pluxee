@@ -24,6 +24,9 @@ except ImportError:
 def formatar_nome_pluxee(nome_bruto, limite=40):
     """Abrevia nomes do meio, mantendo Primeiro e Último intactos."""
     nome = unidecode(str(nome_bruto)).upper().strip()
+    # Limpeza extra: Remove termos que o Word pode trazer colados ao nome
+    nome = re.sub(r'^(NASC|CPF|NOME)[:.,\s-]*', '', nome)
+    
     if len(nome) <= limite:
         return nome
     partes = nome.split()
@@ -68,11 +71,13 @@ def limpar_cpf(cpf_bruto):
     return cpf_limpo.zfill(11)
 
 def converter_data(data_bruta, data_padrao):
-    """Converte qualquer formato de data para DD/MM/AAAA."""
+    """Converte datas (com barra ou traço) para DD/MM/AAAA."""
     if pd.isna(data_bruta) or str(data_bruta).strip() == "":
         return data_padrao
     try:
-        dt = parser.parse(str(data_bruta), dayfirst=True, fuzzy=True)
+        # Troca traço por barra antes de tentar converter
+        data_limpa = str(data_bruta).replace('-', '/')
+        dt = parser.parse(data_limpa, dayfirst=True, fuzzy=True)
         return dt.strftime('%d/%m/%Y')
     except:
         return data_padrao
@@ -85,7 +90,6 @@ st.title("💳 Máquina de Geração - Pluxee PLANSIP3C")
 
 col1, col2 = st.columns([1, 2])
 
-# Inicializa o estado para evitar o erro de Series ambígua
 if "config_rh" not in st.session_state:
     st.session_state.config_rh = None
 if "razao_social" not in st.session_state:
@@ -128,7 +132,7 @@ with col1:
         st.success(f"✅ {len(df_clientes)} vendas encontradas.")
         empresa_sel = st.selectbox("🔍 Selecione o Cliente", df_clientes['razao_social'].tolist())
         
-        # Converte a Series para um dicionário Python comum para evitar erro de ambiguidade
+        # Converte a Series para um dicionário para evitar erro de ambiguidade
         dados_e = df_clientes[df_clientes['razao_social'] == empresa_sel].iloc[0].to_dict()
         st.session_state.razao_social = empresa_sel
         
@@ -170,8 +174,11 @@ with col2:
                 p_atual = {'nome': '', 'cpf': '', 'datas': []}
                 for l in linhas:
                     nums = re.sub(r'\D', '', l)
-                    m_data = re.search(r'\d{2}/\d{2}/\d{2,4}', l)
-                    if m_data: p_atual['datas'].append(m_data.group())
+                    # Regex ajustada para aceitar barra / ou traço -
+                    m_data = re.search(r'\d{2}[/-]\d{2}[/-]\d{2,4}', l)
+                    
+                    if m_data: 
+                        p_atual['datas'].append(m_data.group())
                     elif 9 <= len(nums) <= 14:
                         if not p_atual['cpf']: p_atual['cpf'] = nums
                     else:
@@ -180,7 +187,9 @@ with col2:
                             if p_atual['datas']:
                                 validas = []
                                 for d in p_atual['datas']:
-                                    try: validas.append((parser.parse(d, dayfirst=True), d))
+                                    try: 
+                                        # Limpa traços antes do parser
+                                        validas.append((parser.parse(d.replace('-', '/'), dayfirst=True), d))
                                     except: pass
                                 if validas:
                                     validas.sort(key=lambda x: x[0])
@@ -192,7 +201,7 @@ with col2:
                 if p_atual['nome'] and p_atual['cpf']:
                     dv = []
                     for d in p_atual['datas']:
-                        try: dv.append((parser.parse(d, dayfirst=True), d))
+                        try: dv.append((parser.parse(d.replace('-', '/'), dayfirst=True), d))
                         except: pass
                     dn = dv[0][1] if dv else ""
                     dados_ex.append({'nome': p_atual['nome'], 'cpf': p_atual['cpf'], 'nascimento': dn})
@@ -233,7 +242,6 @@ with col2:
                         v_n = r.get(c_nome)
                         v_c = r.get(c_cpf)
                         
-                        # PREVENÇÃO DE ERRO: Garante que pegamos apenas um valor se a coluna estiver duplicada
                         if isinstance(v_n, pd.Series): v_n = v_n.iloc[0]
                         if isinstance(v_c, pd.Series): v_c = v_c.iloc[0]
                         
@@ -276,7 +284,6 @@ with col2:
                     buf.seek(0)
                     st.success("✅ Processado com sucesso!")
                     
-                    # Usa o nome salvo no session_state para garantir que a interface não apague o dado
                     st.download_button(label="⬇️ Baixar PLANSIP3C", data=buf, 
                         file_name=f"PLANSIP3C_{re.sub(r'[^A-Za-z0-9]', '', st.session_state.razao_social)}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)

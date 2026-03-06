@@ -32,16 +32,16 @@ def formatar_nome_pluxee(nome_bruto, limite=40):
     if len(partes) <= 2:
         return nome[:limite]
     primeiro, ultimo = partes[0], partes[-1]
-    meio = partes[1:-1]
-    # BUG 2 CORRIGIDO: O return estava DENTRO do for, saindo na 1ª iteração sem abreviar corretamente.
-    # Agora abreviamos todos os nomes do meio e só então verificamos o tamanho.
-    for i in range(len(meio)):
-        if len(meio[i]) > 2:
-            meio[i] = meio[i][0] + "."
+    meio_original = partes[1:-1]
+    # Abrevia progressivamente: testa abreviando 0, 1, 2... nomes do meio até caber
+    for num_abreviar in range(len(meio_original) + 1):
+        meio = meio_original.copy()
+        for i in range(num_abreviar):
+            if len(meio[i]) > 2:
+                meio[i] = meio[i][0] + "."
         tentativa = " ".join([primeiro] + meio + [ultimo])
         if len(tentativa) <= limite:
             return tentativa
-    # Se mesmo assim for longo, retorna truncado
     return f"{primeiro} {ultimo}"[:limite]
 
 def formatar_local(texto_bruto, limite=30):
@@ -54,11 +54,13 @@ def formatar_local(texto_bruto, limite=30):
     if len(partes) <= 2:
         return texto[:limite]
     primeiro, ultimo = partes[0], partes[-1]
-    meio = partes[1:-1]
-    # BUG 3 CORRIGIDO: Mesmo bug de lógica do formatar_nome_pluxee — return prematuro dentro do loop.
-    for i in range(len(meio)):
-        if len(meio[i]) > 2:
-            meio[i] = meio[i][0] + "."
+    meio_original = partes[1:-1]
+    # Abrevia progressivamente: testa abreviando 0, 1, 2... nomes do meio até caber
+    for num_abreviar in range(len(meio_original) + 1):
+        meio = meio_original.copy()
+        for i in range(num_abreviar):
+            if len(meio[i]) > 2:
+                meio[i] = meio[i][0] + "."
         tentativa = " ".join([primeiro] + meio + [ultimo])
         if len(tentativa) <= limite:
             return tentativa

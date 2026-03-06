@@ -64,7 +64,7 @@ def converter_data(data_bruta, data_padrao):
         return data_padrao
 
 def limpar_valor(valor_bruto):
-    """Limpa a string de valor (ex: R$ 1.500,00) para um número decimal puro (1500.00)."""
+    """Limpa a string de valor para um número decimal puro (ex: 1500.00)."""
     if pd.isna(valor_bruto): return 0
     val_str = str(valor_bruto).upper().replace('R$', '').replace(' ', '').strip()
     if '.' in val_str and ',' in val_str:
@@ -205,7 +205,8 @@ with col2:
     if tipo_pedido == "💰 Recarga de Saldo":
         st.info("💡 **Dica para Recarga:** Envie uma planilha Excel/CSV com as colunas **Nome**, **CPF** e **Valor**.")
     
-    arq = st.file_uploader("Suba a lista (Excel, CSV ou Word)", type=["xlsx", "xls", "csv", "docx"])
+    # Adicionado suporte ao txt na interface
+    arq = st.file_uploader("Suba a lista (Excel, CSV, Word ou TXT)", type=["xlsx", "xls", "csv", "docx", "txt"])
     
     if arq:
         template_path = "PLANSIP3C_NOVA.xlsx"
@@ -216,10 +217,17 @@ with col2:
         try:
             c_nome = c_cpf = c_nasc = c_valor = None
             
-            # --- LEITOR WORD ---
-            if arq.name.endswith('.docx'):
-                doc = docx.Document(arq)
-                linhas = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+            # --- LEITOR WORD / TXT ---
+            if arq.name.endswith('.docx') or arq.name.endswith('.txt'):
+                
+                # Trata a leitura dependendo se for Word ou TXT
+                if arq.name.endswith('.docx'):
+                    doc = docx.Document(arq)
+                    linhas = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+                else:
+                    # Lê o txt ignorando eventuais erros de codificação
+                    linhas = [linha.strip() for linha in arq.getvalue().decode("utf-8", errors="ignore").splitlines() if linha.strip()]
+                
                 dados_ex = []
                 p_atual = {'nome': '', 'cpf': '', 'datas': []}
                 for l in linhas:
@@ -255,7 +263,7 @@ with col2:
                 c_nome, c_cpf, c_nasc, c_valor = 'nome', 'cpf', 'nascimento', 'valor'
                 
                 if tipo_pedido == "💰 Recarga de Saldo":
-                    st.warning("⚠️ Você subiu um Word para uma Recarga. O sistema vai zerar os valores. Prefira planilhas para Recargas.")
+                    st.warning("⚠️ Você subiu um Word/TXT para uma Recarga. O sistema não extrai valores soltos de texto. Prefira planilhas (Excel) para Recargas.")
 
             # --- LEITOR EXCEL/CSV ---
             else:
@@ -281,7 +289,7 @@ with col2:
                     if m_val and m_val[1] >= 70:
                         c_valor = headers[headers.index(m_val[0])]
                     else:
-                        st.warning("⚠️ Coluna 'Valor' não encontrada na planilha de Recarga.")
+                        st.warning("⚠️ Coluna 'Valor' não encontrada na planilha.")
 
             # --- PROCESSAMENTO ---
             if st.session_state.config_rh is not None:
@@ -293,7 +301,6 @@ with col2:
                     config = st.session_state.config_rh
                     cep_limpo = re.sub(r'\D', '', str(config.get('CEP', '')))
                     
-                    # Definições baseadas no Tipo de Pedido
                     if tipo_pedido == "💰 Recarga de Saldo":
                         cod_pedido = "001 - Pedido Normal"
                     else:
@@ -311,7 +318,6 @@ with col2:
                         if isinstance(v_nasc, pd.Series): v_nasc = v_nasc.iloc[0]
                         nasc = converter_data(v_nasc, "01/01/1980") if v_nasc else "01/01/1980"
 
-                        # Tratamento do Valor da Recarga
                         valor_final = 0
                         if tipo_pedido == "💰 Recarga de Saldo" and c_valor:
                             v_val = r.get(c_valor)
@@ -325,11 +331,8 @@ with col2:
                             ws.cell(row=r_idx, column=4, value=cpfl)
                             ws.cell(row=r_idx, column=5, value=nasc)
                             
-                            # CÓDIGO DO PEDIDO (Dinâmico)
                             ws.cell(row=r_idx, column=11, value=cod_pedido)
                             ws.cell(row=r_idx, column=12, value=p_code)
-                            
-                            # VALOR DA RECARGA (Dinâmico)
                             ws.cell(row=r_idx, column=13, value=valor_final)
                             
                             ws.cell(row=r_idx, column=14, value=dt_cred)
@@ -353,7 +356,6 @@ with col2:
                     buf.seek(0)
                     st.success("✅ Processado com sucesso!")
                     
-                    # Nome do arquivo final reflete o que foi feito
                     prefixo = "RECARGA" if tipo_pedido == "💰 Recarga de Saldo" else "PLANSIP3C"
                     st.download_button(label="⬇️ Baixar Planilha Pronto", data=buf, 
                         file_name=f"{prefixo}_{re.sub(r'[^A-Za-z0-9]', '', st.session_state.razao_social)}.xlsx",
